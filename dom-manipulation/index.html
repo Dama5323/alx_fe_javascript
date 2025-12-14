@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Quote Generator</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-quote-left"></i> Dynamic Quote Generator</h1>
+            <p class="subtitle">Find inspiration in words that matter</p>
+        </header>
+
+        <main>
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <!-- Filter Section -->
+                <div class="filter-section">
+                    <label for="categoryFilter"><i class="fas fa-filter"></i> Filter by Category:</label>
+                    <select id="categoryFilter" class="category-filter">
+                        <option value="all">All Categories</option>
+                        <!-- Categories will be populated dynamically -->
+                    </select>
+                    <button id="clearFilter" class="btn secondary-btn">
+                        <i class="fas fa-times"></i> Clear Filter
+                    </button>
+                </div>
+
+                <!-- Quote Actions -->
+                <div class="actions">
+                    <button id="newQuote" class="btn primary-btn">
+                        <i class="fas fa-random"></i> Show Random Quote
+                    </button>
+                    <button id="exportQuotes" class="btn success-btn">
+                        <i class="fas fa-download"></i> Export Quotes
+                    </button>
+                    <div class="file-upload">
+                        <label for="importFile" class="btn info-btn">
+                            <i class="fas fa-upload"></i> Import Quotes
+                        </label>
+                        <input type="file" id="importFile" accept=".json" style="display: none;">
+                    </div>
+                    <button id="syncData" class="btn warning-btn">
+                        <i class="fas fa-sync"></i> Sync with Server
+                    </button>
+                </div>
+            </div>
+
+            <!-- Quote Display Area -->
+            <div class="quote-container">
+                <div id="quoteDisplay" class="quote-display">
+                    <div class="quote-placeholder">
+                        <i class="fas fa-quote-left fa-2x"></i>
+                        <p>Click "Show Random Quote" to display a quote</p>
+                    </div>
+                </div>
+                
+                <div class="quote-info">
+                    <span id="quoteCategory" class="category-badge">Category</span>
+                    <span id="quoteCounter" class="counter">Quote 0 of 0</span>
+                </div>
+            </div>
+
+            <!-- Add Quote Form -->
+            <div class="form-container">
+                <h3><i class="fas fa-plus-circle"></i> Add New Quote</h3>
+                <div class="form-group">
+                    <input id="newQuoteText" type="text" 
+                           placeholder="Enter a new quote..." 
+                           class="form-input">
+                    <input id="newQuoteCategory" type="text" 
+                           placeholder="Enter quote category (e.g., Inspiration, Wisdom)"
+                           class="form-input">
+                    <button id="addQuoteBtn" class="btn primary-btn">
+                        <i class="fas fa-plus"></i> Add Quote
+                    </button>
+                </div>
+            </div>
+
+            <!-- Conflict Resolution Modal -->
+            <div id="conflictModal" class="modal">
+                <div class="modal-content">
+                    <h3><i class="fas fa-exclamation-triangle"></i> Data Conflict Detected</h3>
+                    <p id="conflictMessage">There's a conflict between local and server data.</p>
+                    <div class="conflict-actions">
+                        <button id="useServerData" class="btn warning-btn">
+                            <i class="fas fa-server"></i> Use Server Data
+                        </button>
+                        <button id="useLocalData" class="btn info-btn">
+                            <i class="fas fa-desktop"></i> Keep Local Data
+                        </button>
+                        <button id="mergeData" class="btn success-btn">
+                            <i class="fas fa-merge"></i> Merge Both
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Statistics -->
+        <footer class="stats">
+            <div class="stat-item">
+                <i class="fas fa-quote-right"></i>
+                <span>Total Quotes: <span id="totalQuotes">0</span></span>
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-tags"></i>
+                <span>Categories: <span id="totalCategories">0</span></span>
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-history"></i>
+                <span>Last Updated: <span id="lastUpdated">Never</span></span>
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-database"></i>
+                <span>Storage: <span id="storageStatus">Local</span></span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Notification System -->
+    <div id="notification" class="notification"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
