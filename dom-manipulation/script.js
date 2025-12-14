@@ -8,6 +8,8 @@ class QuoteGenerator {
         this.lastSyncTime = null;
         this.syncInterval = null;
         this.isAddingQuote = false;
+        this.serverUrl = 'https://jsonplaceholder.typicode.com';
+        this.isOnline = true;
         
         this.initializeApp();
     }
@@ -33,6 +35,9 @@ class QuoteGenerator {
         
         // Update statistics
         this.updateStatistics();
+        
+        // Check online status
+        this.checkOnlineStatus();
     }
     
     // Task 1 Requirement: Default quotes
@@ -43,35 +48,40 @@ class QuoteGenerator {
                 category: "Inspiration",
                 id: 1,
                 timestamp: Date.now() - 86400000,
-                source: "local"
+                source: "local",
+                serverId: null
             },
             {
                 text: "Innovation distinguishes between a leader and a follower.",
                 category: "Leadership",
                 id: 2,
                 timestamp: Date.now() - 172800000,
-                source: "local"
+                source: "local",
+                serverId: null
             },
             {
                 text: "Your time is limited, so don't waste it living someone else's life.",
                 category: "Wisdom",
                 id: 3,
                 timestamp: Date.now() - 259200000,
-                source: "local"
+                source: "local",
+                serverId: null
             },
             {
                 text: "Stay hungry, stay foolish.",
                 category: "Motivation",
                 id: 4,
                 timestamp: Date.now() - 345600000,
-                source: "local"
+                source: "local",
+                serverId: null
             },
             {
                 text: "The future belongs to those who believe in the beauty of their dreams.",
                 category: "Dreams",
                 id: 5,
                 timestamp: Date.now() - 432000000,
-                source: "local"
+                source: "local",
+                serverId: null
             }
         ];
     }
@@ -108,7 +118,7 @@ class QuoteGenerator {
     // Task 2: Save quotes to local storage
     saveQuotes() {
         localStorage.setItem('quotes', JSON.stringify(this.quotes));
-        sessionStorage.setItem('lastUpdate', new Date().toISOString());
+        localStorage.setItem('lastUpdate', new Date().toISOString());
         sessionStorage.setItem('quoteCount', this.quotes.length.toString());
         this.updateStatistics();
     }
@@ -117,13 +127,24 @@ class QuoteGenerator {
     updateStatistics() {
         document.getElementById('totalQuotes').textContent = this.quotes.length;
         document.getElementById('totalCategories').textContent = this.getUniqueCategories().length;
-        const lastUpdate = sessionStorage.getItem('lastUpdate');
+        const lastUpdate = localStorage.getItem('lastUpdate');
         document.getElementById('lastUpdated').textContent = lastUpdate ? new Date(lastUpdate).toLocaleTimeString() : 'Never';
         
-        // Check storage status
-        const localStorageUsage = JSON.stringify(this.quotes).length;
-        const status = localStorageUsage > 5000 ? 'Large' : 'Normal';
+        // Check online status
+        const status = this.isOnline ? 'Online' : 'Offline';
+        const statusColor = this.isOnline ? '#2ecc71' : '#e74c3c';
         document.getElementById('storageStatus').textContent = status;
+        document.getElementById('storageStatus').style.color = statusColor;
+        
+        // Show sync status
+        if (this.lastSyncTime) {
+            const syncTime = document.createElement('small');
+            syncTime.textContent = `Last sync: ${new Date(this.lastSyncTime).toLocaleTimeString()}`;
+            syncTime.style.display = 'block';
+            syncTime.style.fontSize = '12px';
+            syncTime.style.color = '#95a5a6';
+            document.getElementById('storageStatus').appendChild(syncTime);
+        }
     }
     
     // Task 3: Get unique categories
@@ -200,8 +221,14 @@ class QuoteGenerator {
                 <i class="fas fa-quote-right fa-lg quote-icon"></i>
             </div>
             ${quote.source === 'server' ? 
-                '<div class="server-badge"><i class="fas fa-server"></i> From Server</div>' : 
-                ''}
+                `<div class="server-badge">
+                    <i class="fas fa-server"></i> From Server (ID: ${quote.serverId})
+                </div>` : 
+                quote.source === 'sync' ?
+                `<div class="sync-badge">
+                    <i class="fas fa-sync"></i> Synced
+                </div>` : ''
+            }
         `;
         
         quoteCategory.textContent = quote.category;
@@ -214,6 +241,7 @@ class QuoteGenerator {
             <div class="quote-placeholder">
                 <i class="fas fa-quote-left fa-2x"></i>
                 <p>No quotes available. Add some quotes to get started!</p>
+                ${!this.isOnline ? '<p class="offline-warning"><i class="fas fa-wifi-slash"></i> You are currently offline</p>' : ''}
             </div>
         `;
         document.getElementById('quoteCategory').textContent = 'No Category';
@@ -353,7 +381,7 @@ class QuoteGenerator {
     }
     
     // Task 1 Requirement: Add new quote
-    addQuote() {
+    async addQuote() {
         const textInput = document.getElementById('newQuoteText');
         const categoryInput = document.getElementById('newQuoteCategory');
         
@@ -398,7 +426,9 @@ class QuoteGenerator {
             category: category,
             id: Date.now(),
             timestamp: Date.now(),
-            source: 'user'
+            source: 'user',
+            serverId: null,
+            pendingSync: true
         };
         
         this.quotes.push(newQuote);
@@ -423,8 +453,10 @@ class QuoteGenerator {
             this.displayQuote(newQuote);
         }
         
-        // Auto-sync with server
-        this.syncWithServer();
+        // Auto-sync with server if online
+        if (this.isOnline) {
+            await this.syncQuotes();
+        }
     }
     
     showAddCategoryForm() {
@@ -456,7 +488,8 @@ class QuoteGenerator {
             quotes: this.quotes,
             exportDate: new Date().toISOString(),
             count: this.quotes.length,
-            categories: this.getUniqueCategories()
+            categories: this.getUniqueCategories(),
+            lastSync: this.lastSyncTime
         };
         
         const dataStr = JSON.stringify(data, null, 2);
@@ -519,7 +552,8 @@ class QuoteGenerator {
                     ...quote,
                     id: quote.id || Date.now() + Math.random(),
                     timestamp: quote.timestamp || Date.now(),
-                    source: 'import'
+                    source: 'import',
+                    pendingSync: true
                 }));
                 
                 // Add quotes
@@ -531,6 +565,11 @@ class QuoteGenerator {
                 
                 // Show random quote from imported data
                 this.showRandomQuote();
+                
+                // Auto-sync if online
+                if (this.isOnline) {
+                    this.syncQuotes();
+                }
                 
             } catch (error) {
                 this.showNotification('Error importing quotes: ' + error.message, 'error');
@@ -547,190 +586,336 @@ class QuoteGenerator {
         event.target.value = '';
     }
     
-    // Task 4: fetchQuotesFromServer function (simulated)
+    // Task 4: Check online status
+    checkOnlineStatus() {
+        this.isOnline = navigator.onLine;
+        
+        // Update UI based on online status
+        const syncButton = document.getElementById('syncData');
+        if (syncButton) {
+            if (this.isOnline) {
+                syncButton.disabled = false;
+                syncButton.innerHTML = '<i class="fas fa-sync"></i> Sync with Server';
+            } else {
+                syncButton.disabled = true;
+                syncButton.innerHTML = '<i class="fas fa-wifi-slash"></i> Offline';
+            }
+        }
+        
+        // Show notification
+        if (this.isOnline) {
+            this.showNotification('Back online! Syncing with server...', 'info');
+            this.syncQuotes();
+        } else {
+            this.showNotification('You are offline. Changes will be saved locally.', 'warning');
+        }
+        
+        this.updateStatistics();
+    }
+    
+    // Task 4: fetchQuotesFromServer function with real API call
     async fetchQuotesFromServer() {
+        if (!this.isOnline) {
+            throw new Error('Cannot fetch from server: You are offline');
+        }
+        
         this.showNotification('Fetching quotes from server...', 'info');
         
         try {
-            // Simulate API call delay
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            // Using JSONPlaceholder as a mock API
+            const response = await fetch(`${this.serverUrl}/posts?_limit=5`);
             
-            // Mock server response
-            const mockServerQuotes = [
-                {
-                    text: "The best time to plant a tree was 20 years ago. The second best time is now.",
-                    category: "Wisdom",
-                    id: 1001,
-                    timestamp: Date.now() - 3600000,
-                    source: "server"
-                },
-                {
-                    text: "Don't watch the clock; do what it does. Keep going.",
-                    category: "Motivation",
-                    id: 1002,
-                    timestamp: Date.now() - 7200000,
-                    source: "server"
-                },
-                {
-                    text: "The only limit to our realization of tomorrow will be our doubts of today.",
-                    category: "Inspiration",
-                    id: 1003,
-                    timestamp: Date.now() - 10800000,
-                    source: "server"
-                }
-            ];
+            if (!response.ok) {
+                throw new Error(`Server responded with ${response.status}`);
+            }
             
-            return mockServerQuotes;
+            const serverPosts = await response.json();
+            
+            // Convert posts to our quote format
+            const serverQuotes = serverPosts.map((post, index) => ({
+                text: post.title + (post.body ? ` - ${post.body.substring(0, 50)}...` : ''),
+                category: ['Inspiration', 'Wisdom', 'Technology', 'Life', 'Motivation'][index % 5],
+                id: `server_${post.id}`,
+                serverId: post.id,
+                timestamp: Date.now() - (index * 3600000), // Stagger timestamps
+                source: 'server',
+                pendingSync: false
+            }));
+            
+            this.showNotification(`Fetched ${serverQuotes.length} quotes from server`, 'success');
+            return serverQuotes;
             
         } catch (error) {
             console.error('Server fetch error:', error);
-            throw new Error('Failed to fetch from server');
+            throw new Error(`Failed to fetch from server: ${error.message}`);
         }
     }
     
-    // Task 4: Post data to server (simulated)
+    // Task 4: Post data to server using real API
     async postQuotesToServer(quotesToPost) {
-        this.showNotification('Posting quotes to server...', 'info');
+        if (!this.isOnline) {
+            throw new Error('Cannot post to server: You are offline');
+        }
+        
+        if (quotesToPost.length === 0) {
+            return { success: true, postedCount: 0 };
+        }
+        
+        this.showNotification(`Posting ${quotesToPost.length} quotes to server...`, 'info');
         
         try {
-            // Simulate API call delay
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            const postsToCreate = quotesToPost.filter(q => q.pendingSync && !q.serverId);
+            let postedCount = 0;
+            const errors = [];
             
-            // Mock successful post
+            // Post each quote to the mock API
+            for (const quote of postsToCreate) {
+                try {
+                    const response = await fetch(`${this.serverUrl}/posts`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            title: quote.text.substring(0, 50),
+                            body: quote.text + ` [Category: ${quote.category}]`,
+                            userId: 1
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        const serverResponse = await response.json();
+                        
+                        // Update local quote with server ID
+                        const quoteIndex = this.quotes.findIndex(q => q.id === quote.id);
+                        if (quoteIndex !== -1) {
+                            this.quotes[quoteIndex].serverId = serverResponse.id;
+                            this.quotes[quoteIndex].pendingSync = false;
+                            this.quotes[quoteIndex].source = 'sync';
+                            postedCount++;
+                        }
+                    } else {
+                        errors.push(`Failed to post quote: ${quote.text.substring(0, 30)}...`);
+                    }
+                    
+                    // Small delay to avoid overwhelming the mock API
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                } catch (error) {
+                    errors.push(`Error posting quote: ${error.message}`);
+                }
+            }
+            
+            if (errors.length > 0) {
+                console.warn('Some posts failed:', errors);
+            }
+            
+            this.saveQuotes();
             return {
-                success: true,
-                message: 'Quotes posted successfully',
-                postedCount: quotesToPost.length,
-                timestamp: Date.now()
+                success: errors.length === 0,
+                postedCount,
+                errors: errors.length > 0 ? errors : undefined
             };
             
         } catch (error) {
             console.error('Server post error:', error);
-            throw new Error('Failed to post to server');
+            throw new Error(`Failed to post to server: ${error.message}`);
         }
     }
     
-    // Task 4: syncQuotes function
+    // Task 4: syncQuotes function - Complete sync implementation
     async syncQuotes() {
-        this.showNotification('Starting sync with server...', 'info');
+        if (!this.isOnline) {
+            this.showNotification('Cannot sync: You are offline', 'warning');
+            return;
+        }
         
         try {
-            // Fetch from server
+            this.showNotification('Starting sync with server...', 'info');
+            
+            // Create sync status indicator
+            const syncStatus = document.createElement('div');
+            syncStatus.className = 'sync-status';
+            syncStatus.innerHTML = '<div class="loading"></div> Syncing...';
+            document.getElementById('quoteDisplay').prepend(syncStatus);
+            
+            // 1. Fetch quotes from server
             const serverQuotes = await this.fetchQuotesFromServer();
             
-            // Post local quotes to server (only user-added ones)
-            const userQuotes = this.quotes.filter(q => q.source === 'user' || q.source === 'local');
-            if (userQuotes.length > 0) {
-                await this.postQuotesToServer(userQuotes);
+            // 2. Post local quotes to server
+            const pendingQuotes = this.quotes.filter(q => q.pendingSync);
+            const postResult = await this.postQuotesToServer(pendingQuotes);
+            
+            // 3. Merge server quotes with local quotes
+            const mergeResult = this.mergeServerQuotes(serverQuotes);
+            
+            // 4. Handle conflicts if any
+            if (mergeResult.conflicts.length > 0) {
+                this.showConflictModal(mergeResult.conflicts);
             }
             
-            // Merge server quotes with local quotes
-            this.mergeServerQuotes(serverQuotes);
-            
-            // Update last sync time
+            // 5. Update last sync time
             this.lastSyncTime = new Date();
             localStorage.setItem('lastSyncTime', this.lastSyncTime.toISOString());
             
-            this.showNotification('Sync completed successfully', 'success');
+            // Remove sync status
+            syncStatus.remove();
+            
+            // Show comprehensive sync summary
+            let summary = 'Sync completed! ';
+            if (postResult.postedCount > 0) {
+                summary += `Posted ${postResult.postedCount} quotes to server. `;
+            }
+            if (mergeResult.newQuotes.length > 0) {
+                summary += `Added ${mergeResult.newQuotes.length} new quotes from server. `;
+            }
+            if (mergeResult.conflicts.length > 0) {
+                summary += `Resolved ${mergeResult.conflicts.length} conflicts. `;
+            }
+            
+            this.showNotification(summary || 'Sync completed (no changes)', 'success');
+            
+            // Update display
+            this.updateStatistics();
+            this.showRandomQuote();
             
         } catch (error) {
             this.showNotification(`Sync failed: ${error.message}`, 'error');
+            console.error('Sync error:', error);
         }
     }
     
-    // Merge server quotes with conflict resolution
+    // Task 4: Merge server quotes with conflict resolution
     mergeServerQuotes(serverQuotes) {
         const conflicts = [];
         const newQuotes = [];
         
         serverQuotes.forEach(serverQuote => {
-            const localQuote = this.quotes.find(q => q.id === serverQuote.id);
+            // Try to find by serverId first
+            let localQuote = this.quotes.find(q => q.serverId === serverQuote.serverId);
+            
+            // If not found by serverId, try by text similarity
+            if (!localQuote) {
+                localQuote = this.quotes.find(q => 
+                    q.text.toLowerCase().includes(serverQuote.text.substring(0, 20).toLowerCase()) ||
+                    serverQuote.text.toLowerCase().includes(q.text.substring(0, 20).toLowerCase())
+                );
+            }
             
             if (localQuote) {
-                // Check for conflict (different content with same ID)
+                // Check for conflict (different content)
                 if (localQuote.text !== serverQuote.text || localQuote.category !== serverQuote.category) {
                     conflicts.push({
                         id: serverQuote.id,
-                        local: localQuote,
-                        server: serverQuote
+                        local: { ...localQuote },
+                        server: serverQuote,
+                        timestamp: new Date().toISOString()
                     });
                     
-                    // By default, use server data (newer timestamp)
+                    // By default, use server data if it's newer
                     if (serverQuote.timestamp > localQuote.timestamp) {
-                        Object.assign(localQuote, serverQuote);
+                        const index = this.quotes.findIndex(q => q.id === localQuote.id);
+                        if (index !== -1) {
+                            // Merge data, keeping server values
+                            this.quotes[index] = {
+                                ...this.quotes[index],
+                                text: serverQuote.text,
+                                category: serverQuote.category,
+                                timestamp: serverQuote.timestamp,
+                                source: 'sync'
+                            };
+                        }
                     }
                 }
             } else {
                 // New quote from server
                 newQuotes.push(serverQuote);
+                this.quotes.push(serverQuote);
             }
         });
         
-        // Add new quotes
-        this.quotes.push(...newQuotes);
-        
         // Save changes
-        this.saveQuotes();
-        this.populateCategories();
-        
-        // Show conflict notification if any
-        if (conflicts.length > 0) {
-            this.showNotification(`${conflicts.length} conflicts resolved`, 'warning');
-        }
-        
-        // Show new quotes notification
-        if (newQuotes.length > 0) {
-            this.showNotification(`${newQuotes.length} new quotes added from server`, 'info');
+        if (conflicts.length > 0 || newQuotes.length > 0) {
+            this.saveQuotes();
+            this.populateCategories();
         }
         
         return { conflicts, newQuotes };
     }
     
-    // Task 4: Periodic sync
+    // Task 4: Start periodic sync
     startSyncInterval() {
-        // Sync every 2 minutes (120000 ms) for demonstration
+        // Sync every 30 seconds for demonstration (in real app, this would be longer)
         this.syncInterval = setInterval(() => {
-            this.syncQuotes();
-        }, 120000);
+            if (this.isOnline) {
+                this.syncQuotes();
+            }
+        }, 30000); // 30 seconds
         
         // Also sync on visibility change (when user returns to tab)
         document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) {
+            if (!document.hidden && this.isOnline) {
                 this.syncQuotes();
             }
+        });
+        
+        // Listen for online/offline events
+        window.addEventListener('online', () => {
+            this.isOnline = true;
+            this.checkOnlineStatus();
+        });
+        
+        window.addEventListener('offline', () => {
+            this.isOnline = false;
+            this.checkOnlineStatus();
         });
     }
     
     // Task 4: Manual sync with server
     async syncWithServer() {
         await this.syncQuotes();
-        this.updateStatistics();
-        this.showRandomQuote();
     }
     
-    // Task 4: Conflict resolution modal
+    // Task 4: Enhanced Conflict resolution modal
     showConflictModal(conflicts) {
         const modal = document.getElementById('conflictModal');
         const message = document.getElementById('conflictMessage');
         
-        if (conflicts.length === 0) {
-            this.showNotification('No conflicts found', 'info');
-            return;
-        }
+        if (conflicts.length === 0) return;
         
         message.innerHTML = `
-            <p><strong>Found ${conflicts.length} conflict(s):</strong></p>
-            <ul>
-                ${conflicts.slice(0, 3).map(conflict => `
-                    <li>
-                        <strong>Local:</strong> "${conflict.local.text.substring(0, 50)}..."
-                        <br>
-                        <strong>Server:</strong> "${conflict.server.text.substring(0, 50)}..."
-                    </li>
+            <div class="conflict-header">
+                <i class="fas fa-exclamation-triangle fa-2x" style="color: #e74c3c;"></i>
+                <h4>Data Conflicts Detected</h4>
+            </div>
+            <p><strong>Found ${conflicts.length} conflict(s) between local and server data:</strong></p>
+            
+            <div class="conflicts-list">
+                ${conflicts.slice(0, 3).map((conflict, index) => `
+                    <div class="conflict-item">
+                        <div class="conflict-number">#${index + 1}</div>
+                        <div class="conflict-details">
+                            <div class="conflict-version local">
+                                <strong><i class="fas fa-desktop"></i> Local:</strong>
+                                <div class="quote-preview">"${conflict.local.text.substring(0, 60)}..."</div>
+                                <small>Category: ${conflict.local.category} | Updated: ${new Date(conflict.local.timestamp).toLocaleTimeString()}</small>
+                            </div>
+                            <div class="conflict-version server">
+                                <strong><i class="fas fa-server"></i> Server:</strong>
+                                <div class="quote-preview">"${conflict.server.text.substring(0, 60)}..."</div>
+                                <small>Category: ${conflict.server.category} | Updated: ${new Date(conflict.server.timestamp).toLocaleTimeString()}</small>
+                            </div>
+                        </div>
+                    </div>
                 `).join('')}
-            </ul>
-            ${conflicts.length > 3 ? `<p>...and ${conflicts.length - 3} more conflicts</p>` : ''}
-            <p>How would you like to resolve these conflicts?</p>
+            </div>
+            
+            ${conflicts.length > 3 ? 
+                `<p class="more-conflicts">...and ${conflicts.length - 3} more conflict(s)</p>` : 
+                ''
+            }
+            
+            <p class="conflict-instruction">How would you like to resolve these conflicts?</p>
         `;
         
         modal.style.display = 'flex';
@@ -738,34 +923,54 @@ class QuoteGenerator {
         // Set up conflict resolution buttons
         document.getElementById('useServerData').onclick = () => {
             conflicts.forEach(conflict => {
-                const index = this.quotes.findIndex(q => q.id === conflict.id);
+                const index = this.quotes.findIndex(q => q.id === conflict.local.id);
                 if (index !== -1) {
-                    this.quotes[index] = conflict.server;
+                    this.quotes[index] = {
+                        ...this.quotes[index],
+                        text: conflict.server.text,
+                        category: conflict.server.category,
+                        timestamp: conflict.server.timestamp,
+                        source: 'server'
+                    };
                 }
             });
             this.saveQuotes();
+            this.showNotification(`Used server data for ${conflicts.length} conflicts`, 'info');
             modal.style.display = 'none';
-            this.showNotification('Using server data for all conflicts', 'info');
+            this.showRandomQuote();
         };
         
         document.getElementById('useLocalData').onclick = () => {
+            conflicts.forEach(conflict => {
+                const index = this.quotes.findIndex(q => q.id === conflict.local.id);
+                if (index !== -1) {
+                    this.quotes[index].pendingSync = true;
+                }
+            });
+            this.saveQuotes();
+            this.showNotification(`Keeping local data for ${conflicts.length} conflicts`, 'info');
             modal.style.display = 'none';
-            this.showNotification('Keeping local data for all conflicts', 'info');
         };
         
         document.getElementById('mergeData').onclick = () => {
             conflicts.forEach(conflict => {
-                const index = this.quotes.findIndex(q => q.id === conflict.id);
+                const index = this.quotes.findIndex(q => q.id === conflict.local.id);
                 if (index !== -1) {
-                    // Keep the newer version
-                    if (conflict.server.timestamp > conflict.local.timestamp) {
-                        this.quotes[index] = conflict.server;
-                    }
+                    // Merge: use server text if longer, otherwise keep local
+                    const useServerText = conflict.server.text.length > conflict.local.text.length;
+                    this.quotes[index] = {
+                        ...this.quotes[index],
+                        text: useServerText ? conflict.server.text : conflict.local.text,
+                        category: conflict.server.category, // Always use server category
+                        timestamp: Math.max(conflict.server.timestamp, conflict.local.timestamp),
+                        source: 'merged'
+                    };
                 }
             });
             this.saveQuotes();
+            this.showNotification(`Merged data for ${conflicts.length} conflicts`, 'success');
             modal.style.display = 'none';
-            this.showNotification('Merged data keeping newer versions', 'info');
+            this.showRandomQuote();
         };
     }
     
@@ -783,10 +988,17 @@ class QuoteGenerator {
         notification.className = `notification ${type}`;
         notification.style.display = 'block';
         
-        // Auto-hide after 3 seconds
+        // Add timestamp
+        const timestamp = document.createElement('div');
+        timestamp.className = 'notification-timestamp';
+        timestamp.textContent = new Date().toLocaleTimeString();
+        notification.appendChild(timestamp);
+        
+        // Auto-hide after 5 seconds for info, 10 seconds for errors
+        const hideTime = type === 'error' ? 10000 : 5000;
         setTimeout(() => {
             notification.style.display = 'none';
-        }, 3000);
+        }, hideTime);
         
         // Also log to console for debugging
         console.log(`[${type.toUpperCase()}] ${message}`);
@@ -853,6 +1065,7 @@ class QuoteGenerator {
         window.addEventListener('click', (event) => {
             if (event.target === modal) {
                 modal.style.display = 'none';
+                this.showNotification('Conflict resolution cancelled', 'warning');
             }
         });
         
@@ -875,6 +1088,12 @@ class QuoteGenerator {
                 e.preventDefault();
                 this.createAddQuoteForm();
             }
+            
+            // Escape to close modal
+            if (e.key === 'Escape' && modal.style.display === 'flex') {
+                modal.style.display = 'none';
+                this.showNotification('Conflict resolution cancelled', 'warning');
+            }
         });
     }
 }
@@ -887,8 +1106,10 @@ document.addEventListener('DOMContentLoaded', () => {
     window.quoteApp = app;
     
     console.log('Dynamic Quote Generator initialized successfully!');
+    console.log('Server URL:', app.serverUrl);
     console.log('Keyboard shortcuts:');
     console.log('- Ctrl/Cmd + N: Show new random quote');
     console.log('- Ctrl/Cmd + S: Sync with server');
     console.log('- Ctrl/Cmd + A: Open add quote form');
+    console.log('- Escape: Close conflict modal');
 });
